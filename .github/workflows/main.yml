@@ -19,19 +19,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Project Structure & Gradle
-        run: |
-          mkdir -p app/src/main/java/com/example/webviewapp app/src/main/res/layout
-          
-          if [ -f AndroidManifest.xml ]; then
-            mv AndroidManifest.xml app/src/main/
-          fi
-          
-          if [ -f MainActivity.java ]; then
-            mv MainActivity.java app/src/main/java/com/example/webviewapp/
-          fi
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-          cat << 'EOF' > app/src/main/res/layout/activity_main.xml
+      - name: Build Simple WebView APK
+        run: |
+          mkdir -p res/layout res/values bin build/outputs/apk
+          
+          # 1. Layout file
+          cat << 'EOF' > res/layout/activity_main.xml
           <?xml version="1.0" encoding="utf-8"?>
           <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:layout_width="match_parent"
@@ -43,52 +39,37 @@ jobs:
           </RelativeLayout>
           EOF
 
-          cat << 'EOF' > build.gradle
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.1.1'
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
+          # 2. Styles/Strings file
+          cat << 'EOF' > res/values/strings.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">SRCSC</string>
+          </resources>
           EOF
 
-          cat << 'EOF' > app/build.gradle
-          plugins {
-              id 'com.android.application'
-          }
-          android {
-              namespace 'com.example.webviewapp'
-              compileSdk 33
-              defaultConfig {
-                  applicationId "com.example.webviewapp"
-                  minSdk 21
-                  targetSdk 33
-                  versionCode 1
-                  versionName "1.0"
-              }
-          }
-          EOF
+          # 3. AAPT Resource Compilation
+          $ANDROID_HOME/build-tools/33.0.0/aapt package -f -m -J . -M AndroidManifest.xml -S res -I $ANDROID_HOME/platforms/android-33/android.jar
 
-          cat << 'EOF' > settings.gradle
-          include ':app'
-          EOF
+          # 4. Compile Java Files
+          javac -d bin -classpath $ANDROID_HOME/platforms/android-33/android.jar *.java
 
-          gradle wrapper
+          # 5. Convert to DEX
+          $ANDROID_HOME/build-tools/33.0.0/dx --dex --output=classes.dex bin/
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug
+          # 6. Package Unsigned APK
+          $ANDROID_HOME/build-tools/33.0.0/aapt package -f -M AndroidManifest.xml -S res -I $ANDROID_HOME/platforms/android-33/android.jar -F build/outputs/apk/app-unsigned.apk .
 
-      - name: Upload APK Artifact
+          # 7. Add DEX into APK
+          cd build/outputs/apk
+          $ANDROID_HOME/build-tools/33.0.0/aapt add app-unsigned.apk ../../../classes.dex
+
+          # 8. Sign APK
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android,O=Android,C=US"
+          $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android app-unsigned.apk
+          mv app-unsigned.apk app-release.apk
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: build/outputs/apk/app-release.apk
