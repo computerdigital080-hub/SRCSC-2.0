@@ -22,25 +22,21 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build APK with AAPT
+      - name: Build Simple APK
         run: |
-          mkdir -p res/layout
+          mkdir -p res/layout bin build/outputs/apk
           echo '<?xml version="1.0" encoding="utf-8"?><RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent"><WebView android:id="@+id/webview" android:layout_width="match_parent" android:layout_height="match_parent"/></RelativeLayout>' > res/layout/activity_main.xml
           
           $ANDROID_HOME/build-tools/33.0.0/aapt package -f -m -J . -M AndroidManifest.xml -S res -I $ANDROID_HOME/platforms/android-33/android.jar
-          
-          mkdir -p bin
-          javac -d bin -classpath $ANDROID_HOME/platforms/android-33/android.jar com/example/webviewapp/*.java || javac -d bin -classpath $ANDROID_HOME/platforms/android-33/android.jar *.java
-          
+          javac -d bin -classpath $ANDROID_HOME/platforms/android-33/android.jar *.java
           $ANDROID_HOME/build-tools/33.0.0/dx --dex --output=classes.dex bin/
           
-          mkdir -p build/outputs/apk
           $ANDROID_HOME/build-tools/33.0.0/aapt package -f -M AndroidManifest.xml -S res -I $ANDROID_HOME/platforms/android-33/android.jar -F build/outputs/apk/app-unsigned.apk .
           
           cd build/outputs/apk
           $ANDROID_HOME/build-tools/33.0.0/aapt add app-unsigned.apk ../../../classes.dex
           
-          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android,O=Android,C=US"
           $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks debug.keystore --ks-pass pass:android app-unsigned.apk
           mv app-unsigned.apk app-release.apk
 
